@@ -34,7 +34,7 @@ Root 是 Android 的系统管理员权限。下面三个应用各有职责，需
 
 - 本项目安装包：查看 [Releases](https://github.com/kun520ovo/DFRoot/releases)。
 - Shizuku：[官方下载](https://shizuku.rikka.app/download/)与[启动指南](https://shizuku.rikka.app/guide/setup/)。
-- 管理器可从 [KernelSU](https://github.com/tiann/KernelSU/releases/latest)、[KernelSU-Next](https://github.com/KernelSU-Next/KernelSU-Next/releases/latest) 等兼容项目选择；最终以本应用能否识别该管理器为准。
+- 管理器可从 [KernelSU](https://github.com/tiann/KernelSU/releases/latest)、[KernelSU-Next](https://github.com/KernelSU-Next/KernelSU-Next/releases/latest)、[SukiSU-Ultra](https://github.com/SukiSU-Ultra/SukiSU-Ultra) 等兼容项目选择；最终以本应用能否识别该管理器为准。
 
 ### 支持哪些内核
 
