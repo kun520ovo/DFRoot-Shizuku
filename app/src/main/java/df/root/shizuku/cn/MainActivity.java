@@ -5,8 +5,10 @@ import android.app.Activity;
 import android.app.ActionBar;
 import android.app.Dialog;
 import android.content.ActivityNotFoundException;
+import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.SharedPreferences;
 import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
@@ -15,9 +17,11 @@ import android.content.pm.ResolveInfo;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.InsetDrawable;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.SystemClock;
 import android.provider.Settings;
 import android.text.SpannableString;
 import android.text.Spanned;
@@ -80,9 +84,26 @@ public class MainActivity extends Activity implements IReporter {
     private boolean mPermissionRetrying;
     private boolean mPermissionRetryHint, mListLoading, mListFailed, mUpdatingAdapter, mResumed, mDestroyed;
     private boolean mRefreshAfterRun;
+    private boolean mListNeedsRefresh = true;
+    private boolean mPackageReceiverRegistered;
     private int mScanGeneration;
     private Future<?> mScanTask;
     private String mSelectedPackage;
+
+    private final BroadcastReceiver mPackageChangeReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            if (mDestroyed) return;
+            String action = intent.getAction();
+            // An update also emits remove/add events; wait for PACKAGE_REPLACED.
+            if ((Intent.ACTION_PACKAGE_ADDED.equals(action)
+                    || Intent.ACTION_PACKAGE_REMOVED.equals(action))
+                    && intent.getBooleanExtra(Intent.EXTRA_REPLACING, false)) return;
+            mListNeedsRefresh = true;
+            cancelManagerScan();
+            if (mResumed) refreshAppListState(false);
+        }
+    };
 
     private final Runnable mShizukuChanged = () -> {
         if (mDestroyed) return;
@@ -251,12 +272,33 @@ public class MainActivity extends Activity implements IReporter {
             mMain.post(mRunStateRefresh);
             mExec.execute(this::runExploit);
         });
+        registerPackageChangeReceiver();
+    }
+
+    private void registerPackageChangeReceiver() {
+        IntentFilter filter = new IntentFilter();
+        filter.addAction(Intent.ACTION_PACKAGE_ADDED);
+        filter.addAction(Intent.ACTION_PACKAGE_REMOVED);
+        filter.addAction(Intent.ACTION_PACKAGE_REPLACED);
+        filter.addDataScheme("package");
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                registerReceiver(mPackageChangeReceiver, filter, Context.RECEIVER_NOT_EXPORTED);
+            } else {
+                registerReceiver(mPackageChangeReceiver, filter);
+            }
+            mPackageReceiverRegistered = true;
+        } catch (RuntimeException e) {
+            // If package changes cannot be observed, resume must still refresh.
+            Log.w(TAG, "Cannot observe package changes", e);
+        }
     }
 
     @Override
     protected void onResume() {
         super.onResume();
         mResumed = true;
+        if (!mPackageReceiverRegistered && !mListLoading) mListNeedsRefresh = true;
         refreshAppListState(true);
         mShizuku.refresh();
         if (mPermissionInFlight) schedulePermissionWatchdog();
@@ -286,6 +328,10 @@ public class MainActivity extends Activity implements IReporter {
     @Override
     protected void onDestroy() {
         mDestroyed = true;
+        if (mPackageReceiverRegistered) {
+            unregisterReceiver(mPackageChangeReceiver);
+            mPackageReceiverRegistered = false;
+        }
         if (mShizuku != null) mShizuku.removeListener(mShizukuChanged);
         if (mLogDialog != null) mLogDialog.dismiss();
         cancelManagerScan();
@@ -374,6 +420,7 @@ public class MainActivity extends Activity implements IReporter {
         if (mDestroyed || !mResumed || mPermissionInFlight
                 || RUNNING.get() || mShizuku.isRunning()) return;
         if (hasAppListPermission()) {
+            mListNeedsRefresh = true;
             refreshAppListState(false);
             return;
         }
@@ -422,6 +469,7 @@ public class MainActivity extends Activity implements IReporter {
     private void refreshAppListState(boolean allowAutomaticPrompt) {
         if (mDestroyed) return;
         if (!hasAppListPermission()) {
+            mListNeedsRefresh = true;
             cancelManagerScan();
             mSelectedPackage = null;
             mValidSuManagerPos = 0;
@@ -454,13 +502,17 @@ public class MainActivity extends Activity implements IReporter {
         if (RUNNING.get()) {
             mRefreshAfterRun = true;
             updateRunButton();
-        } else {
+        } else if (mListNeedsRefresh) {
             refreshSuManagerList();
+        } else {
+            // Keep both completed results and an in-flight scan across pause/resume.
+            updateRunButton();
         }
     }
 
     private void refreshSuManagerList() {
         cancelManagerScan();
+        mListNeedsRefresh = false;
         final int generation = mScanGeneration;
         final String currentPackage = mSelectedPackage;
         final String savedPackage = mPrefs.getString(ExploitRunner.PREF_SU_MANAGER, null);
@@ -469,16 +521,22 @@ public class MainActivity extends Activity implements IReporter {
         showManagerStatus(R.string.manager_loading);
         updateRunButton();
         mScanTask = mListExec.submit(() -> {
+            long started = SystemClock.elapsedRealtime();
             List<SuManagerEntry> entries = new ArrayList<>();
             try {
                 if (!hasAppListPermission()) {
                     mMain.post(() -> {
-                        if (!mDestroyed && generation == mScanGeneration) refreshAppListState(false);
+                        if (mDestroyed || generation != mScanGeneration) return;
+                        mListNeedsRefresh = true;
+                        cancelManagerScan();
+                        refreshAppListState(false);
                     });
                     return;
                 }
                 PackageManager pm = getPackageManager();
-                for (ApplicationInfo app : pm.getInstalledApplications(0)) {
+                List<ApplicationInfo> installedApps = pm.getInstalledApplications(0);
+                long listReadTime = SystemClock.elapsedRealtime() - started;
+                for (ApplicationInfo app : installedApps) {
                     if (Thread.currentThread().isInterrupted()) return;
                     if ((app.flags & ApplicationInfo.FLAG_SYSTEM) != 0 || !ExploitRunner.hasKsud(app)) continue;
                     CharSequence label;
@@ -494,6 +552,9 @@ public class MainActivity extends Activity implements IReporter {
                     entries.add(new SuManagerEntry(app.packageName, label, icon));
                 }
                 entries.sort((a, b) -> a.label.toString().compareToIgnoreCase(b.label.toString()));
+                Log.i(TAG, "Manager scan: app list=" + listReadTime + " ms, checks="
+                        + (SystemClock.elapsedRealtime() - started - listReadTime)
+                        + " ms, found=" + entries.size());
                 mMain.post(() -> {
                     if (mDestroyed || generation != mScanGeneration) return;
                     if (!hasAppListPermission()) {
