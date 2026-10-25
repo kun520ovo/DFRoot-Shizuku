@@ -23,7 +23,7 @@
     <string name="log_kernel_version">* 内核版本：</string>
     <string name="log_no_manager_selected">未选择 SU 管理器\n</string>
     <string name="log_manager_removed">%s 已被卸载\n</string>
-    <string name="log_no_libksud">在 %s 中未找到 libksud.so\n</string>
+    <string name="log_no_libksud">在 %s 中未找到可用的 ksud 程序\n</string>
 
     <!-- 结果提示（Toast） -->
     <string name="result_success">DFRoot Shizuku版：成功</string>
