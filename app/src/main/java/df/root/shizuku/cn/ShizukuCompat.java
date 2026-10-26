@@ -46,7 +46,7 @@ final class ShizukuCompat {
         STOPPED(R.string.shizuku_stopped), PERMISSION(R.string.shizuku_permission),
         REQUESTING(R.string.shizuku_requesting), OLD_VERSION(R.string.shizuku_old_version),
         READY(R.string.shizuku_ready), RUNNING(R.string.shizuku_running),
-        REBOOTING(R.string.shizuku_rebooting),
+        FINISHING(R.string.shizuku_finishing), REBOOTING(R.string.shizuku_rebooting),
         RESTORE_FAILED(R.string.shizuku_restore_pending), ERROR(R.string.shizuku_check_failed);
 
         final int caption;
@@ -59,14 +59,16 @@ final class ShizukuCompat {
         final boolean recoveryPending;
         final boolean rebootRequested;
         final boolean rebootFailed;
+        final boolean managerLaunchAllowed;
 
         Result(int rootCode, boolean settingsRestored, boolean recoveryPending,
-               boolean rebootRequested, boolean rebootFailed) {
+               boolean rebootRequested, boolean rebootFailed, boolean managerLaunchAllowed) {
             this.rootCode = rootCode;
             this.settingsRestored = settingsRestored;
             this.recoveryPending = recoveryPending;
             this.rebootRequested = rebootRequested;
             this.rebootFailed = rebootFailed;
+            this.managerLaunchAllowed = managerLaunchAllowed;
         }
     }
 
@@ -165,6 +167,10 @@ final class ShizukuCompat {
 
     boolean isWaitingForReboot() {
         return running && state == State.REBOOTING;
+    }
+
+    boolean isWaitingForManager() {
+        return running && state == State.FINISHING;
     }
 
     boolean softRebootEnabled() {
@@ -319,6 +325,7 @@ final class ShizukuCompat {
             String bootId = null, original = null;
             boolean cleanupNeeded = false, restored = false;
             boolean softRebootWanted = false;
+            boolean managerLaunchAllowed = false;
             SoftRebootGate rebootGate = null;
             int rootCode = -1, rebootOutcome = SoftRebootGate.PENDING;
             try {
@@ -331,7 +338,7 @@ final class ShizukuCompat {
                 if (new File("/dev/df").exists()) {
                     restored = true;
                     reporter.report(context.getString(R.string.log_already_hooked));
-                    return new Result(0, true, false, false, false);
+                    return new Result(0, true, false, false, false, false);
                 }
                 Bundle snapshot = current.snapshot();
                 if (snapshot.containsKey(InitLogService.ERROR)) throw serviceError(snapshot);
@@ -379,29 +386,61 @@ final class ShizukuCompat {
                     reporter.report(message + "\n");
                 } finally {
                     try {
-                        rebootOutcome = finishSoftReboot(rebootGate, softRebootWanted, rootCode, restored, reporter);
+                        if (softRebootWanted) {
+                            rebootOutcome = finishSoftReboot(rebootGate, rootCode, restored, reporter);
+                        } else {
+                            managerLaunchAllowed = finishManagerLoad(rebootGate, rootCode, restored, reporter);
+                        }
                     } finally {
-                        running = false;
-                        operation.unlock();
-                        if (hasPendingRecovery()) setState(State.RESTORE_FAILED);
-                        else if (cleanupNeeded && !restored) setState(State.ERROR);
-                        else if (service != null && service.asBinder().pingBinder()) setState(State.READY);
-                        else setState(State.STOPPED);
+                        try {
+                            if (rebootGate != null) rebootGate.close();
+                        } catch (IOException e) {
+                            Log.w("dfroot", "Closing the run acknowledgement failed", e);
+                        } finally {
+                            running = false;
+                            operation.unlock();
+                            if (hasPendingRecovery()) setState(State.RESTORE_FAILED);
+                            else if (cleanupNeeded && !restored) setState(State.ERROR);
+                            else if (service != null && service.asBinder().pingBinder()) setState(State.READY);
+                            else setState(State.STOPPED);
+                        }
                     }
                 }
             }
             return new Result(rootCode, restored, hasPendingRecovery(),
                     rebootOutcome == SoftRebootGate.REQUESTED,
-                    rebootOutcome == SoftRebootGate.FAILED || rebootOutcome == SoftRebootGate.TIMED_OUT);
+                    rebootOutcome == SoftRebootGate.FAILED || rebootOutcome == SoftRebootGate.TIMED_OUT,
+                    managerLaunchAllowed);
         }
     }
 
-    private int finishSoftReboot(SoftRebootGate gate, boolean requested, int rootCode,
+    private boolean finishManagerLoad(SoftRebootGate gate, int rootCode,
+                                      boolean restored, IReporter reporter) {
+        if (gate == null) return false;
+        try {
+            // Waiting for the manager must never authorize an automatic reboot.
+            gate.authorize(false, rootCode, restored, hasPendingRecovery());
+            if (rootCode != 0 || !restored || hasPendingRecovery()) return false;
+            setState(State.FINISHING);
+            reporter.report(context.getString(R.string.manager_launch_waiting) + "\n");
+            int outcome = gate.awaitManagerCompletion(125000);
+            if (outcome == SoftRebootGate.LOAD_COMPLETE) return true;
+            reporter.report(context.getString(outcome == SoftRebootGate.LOAD_TIMED_OUT
+                    ? R.string.manager_launch_timed_out : R.string.manager_launch_unconfirmed) + "\n");
+        } catch (Exception e) {
+            if (e instanceof InterruptedException) Thread.currentThread().interrupt();
+            Log.w("dfroot", "Manager completion was not confirmed", e);
+            reporter.report(context.getString(R.string.manager_launch_unconfirmed) + "\n");
+        }
+        return false;
+    }
+
+    private int finishSoftReboot(SoftRebootGate gate, int rootCode,
                                 boolean restored, IReporter reporter) {
         if (gate == null) return SoftRebootGate.PENDING;
         try {
-            if (!gate.authorize(requested, rootCode, restored, hasPendingRecovery())) {
-                if (requested) reporter.report(context.getString(R.string.soft_reboot_cancelled) + "\n");
+            if (!gate.authorize(true, rootCode, restored, hasPendingRecovery())) {
+                reporter.report(context.getString(R.string.soft_reboot_cancelled) + "\n");
                 return SoftRebootGate.PENDING;
             }
             setState(State.REBOOTING);
@@ -414,13 +453,7 @@ final class ShizukuCompat {
             if (e instanceof InterruptedException) Thread.currentThread().interrupt();
             Log.w("dfroot", "Automatic soft reboot was not confirmed", e);
             reporter.report(context.getString(R.string.soft_reboot_unconfirmed) + "\n");
-            return requested && rootCode == 0 ? SoftRebootGate.FAILED : SoftRebootGate.PENDING;
-        } finally {
-            try {
-                gate.close();
-            } catch (IOException e) {
-                Log.w("dfroot", "Closing the soft reboot acknowledgement failed", e);
-            }
+            return rootCode == 0 ? SoftRebootGate.FAILED : SoftRebootGate.PENDING;
         }
     }
 

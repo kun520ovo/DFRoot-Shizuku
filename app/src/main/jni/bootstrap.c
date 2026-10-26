@@ -21,12 +21,18 @@
 #define GATE_SIZE 8
 #define GATE_AUTH 4
 #define GATE_RESULT 5
+#define GATE_LOAD_RESULT 6
+#define GATE_ACTIVE 7
 #define GATE_WAIT 0
 #define GATE_ALLOW 1
 #define GATE_READY 1
 #define GATE_REQUESTED 2
 #define GATE_FAILED 3
 #define GATE_TIMED_OUT 4
+#define LOAD_PENDING 0
+#define LOAD_COMPLETE 1
+#define LOAD_FAILED 2
+#define LOAD_TIMED_OUT 3
 
 static volatile unsigned char *open_reboot_gate(void)
 {
@@ -46,7 +52,7 @@ static volatile unsigned char *open_reboot_gate(void)
     }
     close(fd);
     volatile unsigned char *gate = mapping;
-    if (memcmp(mapping, "DFR1", 4) || gate[GATE_AUTH] != GATE_WAIT) {
+    if (memcmp(mapping, "DFR2", 4) || gate[GATE_AUTH] != GATE_WAIT || gate[GATE_ACTIVE] != 1) {
         gate[GATE_RESULT] = GATE_FAILED;
         munmap(mapping, GATE_SIZE);
         return NULL;
@@ -167,15 +173,27 @@ static int late_load_running(void)
         return -1;
     struct dirent *e;
     char path[64], buf[256];
-    int found = 0;
-    while ((e = readdir(d)) != NULL) {
+    int found = 0, incomplete = 0;
+    for (;;) {
+        errno = 0;
+        e = readdir(d);
+        if (!e) {
+            if (errno) incomplete = 1;
+            break;
+        }
         char *end;
         strtol(e->d_name, &end, 10);
         if (*end) continue;
         snprintf(path, sizeof(path), "/proc/%s/cmdline", e->d_name);
         int fd = open(path, O_RDONLY | O_CLOEXEC);
-        if (fd < 0) continue;
-        int n = read(fd, buf, sizeof(buf) - 1);
+        if (fd < 0) {
+            // A process may exit during the scan; other errors make absence unconfirmed.
+            if (errno != ENOENT && errno != ESRCH) incomplete = 1;
+            continue;
+        }
+        int n;
+        do { n = read(fd, buf, sizeof(buf) - 1); } while (n < 0 && errno == EINTR);
+        if (n < 0 && errno != ENOENT && errno != ESRCH) incomplete = 1;
         close(fd);
         if (n <= 0) continue;
         buf[n] = '\0';
@@ -187,7 +205,7 @@ static int late_load_running(void)
         }
     }
     closedir(d);
-    return found;
+    return found ? 1 : incomplete ? -1 : 0;
 }
 
 static int run_ctx(const char *ctx, char *const argv[])
@@ -210,28 +228,40 @@ static int run_ctx(const char *ctx, char *const argv[])
     return WIFEXITED(status) ? WEXITSTATUS(status) : -1;
 }
 
-static void request_soft_reboot(volatile unsigned char *gate, int deferred)
+static void finish_late_load(volatile unsigned char *gate, int deferred, int soft_reboot)
 {
     /* A missing or invalid manual acknowledgement must never become an auto run. */
     if (deferred && !gate) return;
     for (int elapsed = 0; elapsed < 120; elapsed++) {
-        if (deferred && gate[GATE_AUTH] != GATE_WAIT && gate[GATE_AUTH] != GATE_ALLOW) {
+        if (gate && gate[GATE_ACTIVE] != 1) return;
+        if (soft_reboot && deferred
+                && gate[GATE_AUTH] != GATE_WAIT && gate[GATE_AUTH] != GATE_ALLOW) {
             gate[GATE_RESULT] = GATE_FAILED;
             return;
         }
         int loading = late_load_running();
         if (loading < 0) {
-            if (gate) gate[GATE_RESULT] = GATE_FAILED;
+            if (gate) {
+                gate[GATE_LOAD_RESULT] = LOAD_FAILED;
+                gate[GATE_RESULT] = GATE_FAILED;
+            }
             return;
         }
-        if (!loading && (!deferred || gate[GATE_AUTH] == GATE_ALLOW)) {
-            int rc = run_ctx("u:r:ksu:s0", (char *[]){ KSUD, "soft-reboot", NULL });
-            if (gate) gate[GATE_RESULT] = rc == 0 ? GATE_REQUESTED : GATE_FAILED;
-            return;
+        if (!loading) {
+            if (gate) gate[GATE_LOAD_RESULT] = LOAD_COMPLETE;
+            if (!soft_reboot) return;
+            if (!deferred || (gate[GATE_ACTIVE] == 1 && gate[GATE_AUTH] == GATE_ALLOW)) {
+                int rc = run_ctx("u:r:ksu:s0", (char *[]){ KSUD, "soft-reboot", NULL });
+                if (gate) gate[GATE_RESULT] = rc == 0 ? GATE_REQUESTED : GATE_FAILED;
+                return;
+            }
         }
         sleep(1);
     }
-    if (gate) gate[GATE_RESULT] = GATE_TIMED_OUT;
+    if (gate) {
+        if (gate[GATE_LOAD_RESULT] == LOAD_PENDING) gate[GATE_LOAD_RESULT] = LOAD_TIMED_OUT;
+        if (soft_reboot) gate[GATE_RESULT] = GATE_TIMED_OUT;
+    }
 }
 
 static void touch(const char *path)
@@ -272,7 +302,7 @@ int main(void)
     }
     // Map before KernelSU starts enforcing SELinux. Later acknowledgements need
     // no filesystem reopen or permission change in the init/ksu context.
-    volatile unsigned char *reboot_gate = soft_reboot && defer_reboot ? open_reboot_gate() : NULL;
+    volatile unsigned char *reboot_gate = defer_reboot ? open_reboot_gate() : NULL;
 
     touch("/dev/dfm2");
     if (adopt_zygote_env())
@@ -286,6 +316,11 @@ int main(void)
         touch("/dev/dfm4");
         if (disable_modules()) {
             touch("/dev/dfme1");
+            if (reboot_gate) {
+                reboot_gate[GATE_LOAD_RESULT] = LOAD_FAILED;
+                reboot_gate[GATE_RESULT] = GATE_FAILED;
+                munmap((void *)reboot_gate, GATE_SIZE);
+            }
             return 1;
         }
     }
@@ -294,11 +329,15 @@ int main(void)
     // The kernel's UMH command sets the init context before bootstrap executes.
     if (run_ctx(NULL, (char *[]){ KSUD_STAGE, "late-load", "--package-name", su_manager, NULL }) == 0) {
         touch("/dev/dfm6");
-        if (soft_reboot) {
-            request_soft_reboot(reboot_gate, defer_reboot);
+        if (soft_reboot || reboot_gate) {
+            finish_late_load(reboot_gate, defer_reboot, soft_reboot);
         }
     } else {
         touch("/dev/dfme2");
+        if (reboot_gate) {
+            reboot_gate[GATE_LOAD_RESULT] = LOAD_FAILED;
+            reboot_gate[GATE_RESULT] = GATE_FAILED;
+        }
     }
     if (reboot_gate) munmap((void *)reboot_gate, GATE_SIZE);
 

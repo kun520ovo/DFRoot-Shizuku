@@ -77,6 +77,13 @@
     <string name="manager_scan_failed">读取应用列表失败，请检查权限后重新读取。</string>
     <string name="manager_retry">重新读取应用列表</string>
     <string name="main_running">正在提权…</string>
+    <string name="main_waiting_manager">正在等待管理器…</string>
+    <string name="manager_launch_waiting">临时设置及恢复记录已处理完成，正在等待管理器收尾…</string>
+    <string name="manager_launch_timed_out">等待管理器收尾超时，跳过自动打开；请稍后手动打开所选管理器。</string>
+    <string name="manager_launch_unconfirmed">未能确认管理器收尾完成，跳过自动打开；请稍后手动打开所选管理器。</string>
+    <string name="manager_launch_unavailable">未找到所选管理器的启动入口，请手动打开管理器。</string>
+    <string name="manager_launch_requested">已请求打开所选管理器。</string>
+    <string name="manager_launch_failed">自动打开管理器失败，请手动打开管理器；提权执行结果不受影响。</string>
     <string name="log_view_title">运行日志</string>
     <string name="log_view_fullscreen">全屏</string>
     <string name="log_view_close">关闭</string>
@@ -99,6 +106,7 @@
     <string name="shizuku_old_version">需要 Shizuku 13 或更新版本，点击更新</string>
     <string name="shizuku_ready">服务已运行并授权，可启动 Root</string>
     <string name="shizuku_running">正在使用临时设置，结束后自动恢复</string>
+    <string name="shizuku_finishing">临时设置已恢复，等待管理器收尾</string>
     <string name="shizuku_restore_pending">上次设置尚未恢复，点击重新连接并重试</string>
     <string name="shizuku_check_failed">检查失败，请重试或重新启动 Shizuku</string>
     <string name="shizuku_ready_reboot">服务已就绪，恢复设置后自动软重启</string>

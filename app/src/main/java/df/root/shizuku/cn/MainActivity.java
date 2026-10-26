@@ -89,6 +89,8 @@ public class MainActivity extends Activity implements IReporter {
     private int mScanGeneration;
     private Future<?> mScanTask;
     private String mSelectedPackage;
+    // Main-thread only. Leaving this Activity permanently consumes this run's launch opportunity.
+    private Object mManagerLaunchToken;
 
     private final BroadcastReceiver mPackageChangeReceiver = new BroadcastReceiver() {
         @Override
@@ -264,13 +266,16 @@ public class MainActivity extends Activity implements IReporter {
                 return;
             }
             if (!mShizuku.isReady()
-                    || mValidSuManagerPos < 1 || !ExploitRunner.isSupported()
+                    || mValidSuManagerPos < 1 || mSelectedPackage == null || !ExploitRunner.isSupported()
                     || new File("/dev/df").exists() || !RUNNING.compareAndSet(false, true)) return;
+            final String managerPackage = mSelectedPackage;
+            final Object launchToken = new Object();
+            mManagerLaunchToken = launchToken;
             mRefreshAfterRun = true;
             updateRunButton();
             outputView.setText("");
             mMain.post(mRunStateRefresh);
-            mExec.execute(this::runExploit);
+            mExec.execute(() -> runExploit(managerPackage, launchToken));
         });
         registerPackageChangeReceiver();
     }
@@ -311,9 +316,17 @@ public class MainActivity extends Activity implements IReporter {
     @Override
     protected void onPause() {
         mResumed = false;
+        mManagerLaunchToken = null;
         mMain.removeCallbacks(mPermissionWatchdog);
         mMain.removeCallbacks(mRunStateRefresh);
         super.onPause();
+    }
+
+    @Override
+    public void onTopResumedActivityChanged(boolean isTopResumedActivity) {
+        super.onTopResumedActivityChanged(isTopResumedActivity);
+        // In multi-window mode an Activity can lose the foreground without onPause().
+        if (!isTopResumedActivity) mManagerLaunchToken = null;
     }
 
     @Override
@@ -328,6 +341,7 @@ public class MainActivity extends Activity implements IReporter {
     @Override
     protected void onDestroy() {
         mDestroyed = true;
+        mManagerLaunchToken = null;
         if (mPackageReceiverRegistered) {
             unregisterReceiver(mPackageChangeReceiver);
             mPackageReceiverRegistered = false;
@@ -759,7 +773,8 @@ public class MainActivity extends Activity implements IReporter {
         btnRun.setEnabled(mResumed && !mDestroyed && !running && !mListLoading
                 && !mPermissionInFlight && (!granted || retryList || ready));
         btnRun.setText(running ? (mShizuku.isWaitingForReboot()
-                    ? R.string.main_waiting_soft_reboot : R.string.main_running)
+                    ? R.string.main_waiting_soft_reboot : mShizuku.isWaitingForManager()
+                    ? R.string.main_waiting_manager : R.string.main_running)
                 : !granted ? (mPermissionInFlight ? R.string.manager_permission_requesting
                     : shouldOpenPermissionSettings() ? R.string.manager_permission_settings
                     : R.string.manager_permission_required_button)
@@ -772,7 +787,7 @@ public class MainActivity extends Activity implements IReporter {
         updateShizukuButton();
     }
 
-    private void runExploit() {
+    private void runExploit(String managerPackage, Object launchToken) {
         try {
             // Second line of defence: the button is already disabled for an
             // unsupported kernel, but never trust a single gate before handing
@@ -792,17 +807,46 @@ public class MainActivity extends Activity implements IReporter {
                     : rc == 1 ? getString(R.string.result_failed_ksud)
                     : rc == 2 ? getString(R.string.result_failed_logs)
                     : getString(R.string.result_failed_patch);
-            mMain.post(() -> Toast.makeText(this, msg, Toast.LENGTH_LONG).show());
+            mMain.post(() -> {
+                if (mDestroyed) return;
+                Toast.makeText(this, msg, Toast.LENGTH_LONG).show();
+                if (result.managerLaunchAllowed) openManagerOnce(managerPackage, launchToken);
+            });
         } catch (Exception e) {
             Log.e(TAG, "exploit exception", e);
             report(getString(R.string.log_exception) + e + "\n");
         } finally {
             RUNNING.set(false);
             mMain.post(() -> {
+                if (mManagerLaunchToken == launchToken) mManagerLaunchToken = null;
                 if (mDestroyed) return;
                 mRefreshAfterRun = false;
                 if (mResumed) refreshAppListState(false);
             });
+        }
+    }
+
+    private void openManagerOnce(String managerPackage, Object launchToken) {
+        if (mManagerLaunchToken != launchToken) return;
+        // Consume before resolving/starting, including failures, so callbacks cannot retry this run.
+        mManagerLaunchToken = null;
+        if (mDestroyed || !mResumed || isFinishing()) return;
+        // The full-screen log is our own foreground window too.
+        boolean focused = hasWindowFocus() || (mLogDialog != null && mLogDialog.isShowing()
+                && mLogDialog.getWindow() != null
+                && mLogDialog.getWindow().getDecorView().hasWindowFocus());
+        if (!focused) return;
+        try {
+            Intent intent = getPackageManager().getLaunchIntentForPackage(managerPackage);
+            if (intent == null) {
+                report(getString(R.string.manager_launch_unavailable) + "\n");
+                return;
+            }
+            startActivity(intent);
+            report(getString(R.string.manager_launch_requested) + "\n");
+        } catch (RuntimeException e) {
+            Log.w(TAG, "Cannot open selected manager " + managerPackage, e);
+            report(getString(R.string.manager_launch_failed) + "\n");
         }
     }
 
