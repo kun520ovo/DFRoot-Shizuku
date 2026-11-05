@@ -14,7 +14,7 @@ on:
         required: false
         default: false
       release_tag:
-        description: '发布标签（如 v5.1-cn；留空使用当前版本）'
+        description: '发布标签（如 v5.3-cn；留空使用当前版本）'
         type: string
         required: false
         default: ''
@@ -52,12 +52,6 @@ jobs:
         run: |
           cd lkm
           make -j$(nproc)
-          llvm-objcopy --strip-unneeded \
-            -R .comment -R .note.gnu.property \
-            -R .note.Linux -R .note.GNU-stack \
-            -R .BTF -R .BTF.base -R .llvm_addrsig \
-            -R .hyp.text -R .hyp.bss -R .hyp.rodata -R .hyp.event_ids \
-            -R .hyp.patchable_function_entries -R .hyp.data dfroot.ko
           mkdir -p "$GITHUB_WORKSPACE/out"
           cp dfroot.ko "$GITHUB_WORKSPACE/out/dfroot-${KMI}.ko"
           make clean

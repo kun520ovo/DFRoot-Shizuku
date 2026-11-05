@@ -4,9 +4,6 @@
 #include <linux/kprobes.h>
 #include <linux/module.h>
 #include <linux/namei.h>
-#include <linux/ptrace.h>
-#include <linux/slab.h>
-#include <asm/cpufeature.h>
 MODULE_LICENSE("GPL");
 MODULE_DESCRIPTION("DFRoot LKM");
 
@@ -51,7 +48,7 @@ static int __nocfi __init dfroot_init(void)
     bool *selinux_state;
     module_kallsyms_lookup_name_t mkln;
     struct kprobe kln_kp;
-    void *oplus_exe_fn, *oplus_root_fn, *defex_enforce_fn, *defex_umh_fn;
+    void *avc_fn, *avc_noaudit_fn, *oplus_exe_fn, *oplus_root_fn, *defex_enforce_fn, *defex_umh_fn;
     void *info;
     int ret;
 
@@ -105,6 +102,27 @@ static int __nocfi __init dfroot_init(void)
     }
     WRITE_ONCE(*selinux_state, false);
     pr_info("dfroot: selinux_state permissive\n");
+
+    // Some kernels ship CONFIG_SECURITY_SELINUX_DEVELOP=n, so the selinux_state
+    // write above is a no-op there — patch the SELinux checks themselves instead
+    // (both: most denials surface through the noaudit path first).
+    if (READ_ONCE(*selinux_state)) {
+        avc_fn = (void *)get_addr("avc_has_perm");
+        if (!avc_fn)
+            pr_err("dfroot: avc_has_perm not found, skipping\n");
+        else {
+            patch_fn_ret_zero(avc_fn);
+            pr_info("dfroot: avc_has_perm patched\n");
+        }
+
+        avc_noaudit_fn = (void *)get_addr("avc_has_perm_noaudit");
+        if (!avc_noaudit_fn)
+            pr_err("dfroot: avc_has_perm_noaudit not found, skipping\n");
+        else {
+            patch_fn_ret_zero(avc_noaudit_fn);
+            pr_info("dfroot: avc_has_perm_noaudit patched\n");
+        }
+    }
 
     // Oppo/OnePlus
     oplus_exe_fn = (void *)(mkln ? mkln("oplus_exe_block_ret_handler") : 0);
@@ -160,8 +178,15 @@ static int __nocfi __init dfroot_init(void)
     ret = umh_exec(info, UMH_WAIT_EXEC);
     pr_info("dfroot: usermodehelper_exec returned %d\n", ret);
     
-    return -ENODEV; /* return any error to unload module */
+    /* intentionally fail init to unload immediately; avoids triggering
+     * mrdump module-loaded callbacks on MTK devices */
+    return -ENODEV;
 }
 
-/* no module_exit: we never unload; saves .exit sections */
+/* some kernels' cfi_init walks both __cfi_jt_init_module and __cfi_jt_cleanup_module
+ * at load time; without a module_exit, the cleanup_module CFI jump table entry is
+ * absent and cfi_init crashes in strcmp */
+static void __exit dfroot_exit(void) {}
+
 module_init(dfroot_init);
+module_exit(dfroot_exit);

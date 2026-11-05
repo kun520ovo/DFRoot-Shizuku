@@ -157,10 +157,12 @@
 
 - 保留 AIDL、BuildConfig、Release 代码裁剪与资源压缩，以及 Shizuku 服务和设置 Fragment 的反射入口保留规则。
 - 保留 `jniLibs.useLegacyPackaging = true` 和原生程序的 16 KB ELF 加载段对齐配置。
-- APK 文件名使用 `DFRoot Shizuku-<版本>_CN.apk`，版本从 `versionName` 去掉末尾的 `-cn` 得到，例如 `5.1-cn` 生成 `DFRoot Shizuku-5.1_CN.apk`。Gradle、Makefile 和 CI 的查找、复制、上传规则保持一致，并正确处理文件名中的空格。
+- APK 文件名使用 `DFRoot Shizuku-<版本>_CN.apk`，版本从 `versionName` 去掉末尾的 `-cn` 得到，例如 `5.3-cn` 生成 `DFRoot Shizuku-5.3_CN.apk`。Gradle、Makefile 和 CI 的查找、复制、上传规则保持一致，并正确处理文件名中的空格。
 - Release 沿用现有私钥，启用 v1 / v2 / v3。Gradle 从未跟踪的 `signing.properties` 读取配置，不硬编码口令或个人路径。
 - CI 使用 `KEYSTORE`、`KEYSTORE_PASSWORD`、`KEY_ALIAS`、`KEY_PASSWORD` 四项 Secrets，临时生成根目录的配置和 `keystore.jks`，结束后清理。普通本机签名文件不因此删除或重置。
-- 具体安装依赖、Debug、Release 和 CI 操作见 `README.md`。正常 APK 构建不要求先从内核源码重建 KO。
+- 手动运行默认只构建；勾选 `publish_release` 后才发布到 Releases。`release_tag` 留空时使用 `v<versionName>`，`v*` 标签推送仍自动发布。发布相关的应用构建共用并发组，不中断已运行的发布；发布前再次核对远端标签，指向其他提交时拒绝发布，不自动移动标签。
+- CI 将 Release APK 的包名、版本和 SDK 与 Gradle 配置逐项核对，确认原生 ABI 仅为 `arm64-v8a` 且 APK 不可调试。构建失败时仍上传已生成的 Lint 报告；内核任务、应用任务的超时分别为 30、60 分钟。
+- 具体安装依赖、Debug、Release 和 CI 操作见 `修改说明.md` 的构建章节。正常 APK 构建不要求先从内核源码重建 KO。
 
 ## 7. 如何选择验证与交付
 
@@ -201,7 +203,7 @@
 - 当前维护者的本地工作区使用项目外的 `output/` 保存资料。其他克隆可以选择自己的源码外目录；不要假定这个目录或维护者的备份、盘符、SDK 路径一定存在。
 - 根 `make clean` 只清理生成目录。`make clean-native` 还会删除原生输入，仅在明确需要重新生成组件时执行。
 - 用户要求构建后清理时，先把通过检查的 APK 和必要记录保存在源码外，再清理本轮生成目录与临时路径映射；保留原始资料、历史交付、本机工具、私有签名和原生输入。
-- 重整冗长历史说明前，在源码外保留原稿。`README.md` 写当前使用与构建方法，`修改说明.md` 写重要功能、修复与上游同步，不追加逐次文案、间距或缓存清理流水账。
+- 重整冗长历史说明前，在源码外保留原稿。`README.md` 写当前使用方法，`修改说明.md` 写重要功能、修复、上游同步与构建方法，不追加逐次文案、间距或缓存清理流水账。
 - 发布前检查实际提交或压缩包内容；ZIP 工具不会自动遵守 `.gitignore`。需要源码包时，只从当前唯一实现生成。
 - 保留上游作者署名、来源及已有许可文本；新增依赖或代码时检查许可，不擅自给整个项目替换许可证。
 - 本地外层 `AGENTS.md` 只负责工作区导航，不替代本文件。上传项目时，将本文件与 `README.md` 一起放在仓库根目录。

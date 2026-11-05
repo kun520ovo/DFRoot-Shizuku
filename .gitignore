@@ -9,6 +9,7 @@
 out/
 captures/
 local.properties
+.DS_Store
 
 # Kernel build outputs; shipped modules under app/src/main/jni/ko stay tracked.
 lkm/*.o

@@ -24,6 +24,7 @@
     <string name="log_no_manager_selected">未选择 SU 管理器\n</string>
     <string name="log_manager_removed">%s 已被卸载\n</string>
     <string name="log_no_libksud">在 %s 中未找到可用的 ksud 程序\n</string>
+    <string name="log_init_logging_disabled">init 的 INFO 日志未启用，已停止本次运行。请将开发者选项中的“日志缓冲区大小”设为非“关闭”，或检查 init 日志设置后重试。\n</string>
 
     <!-- 结果提示（Toast） -->
     <string name="result_success">DFRoot Shizuku版：成功</string>
