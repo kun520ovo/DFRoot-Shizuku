@@ -157,10 +157,27 @@ jobs:
           merge-multiple: true
           path: app/src/main/jni/ko/
 
+      - name: Read JDK version
+        id: jdk
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import os, re
+          from pathlib import Path
+
+          config = Path("gradle/gradle-daemon-jvm.properties").read_text(encoding="utf-8-sig")
+          versions = re.findall(r"(?m)^[ \t]*toolchainVersion[ \t]*=[ \t]*(.*?)[ \t]*$", config)
+          if len(versions) != 1 or not re.fullmatch(r"[1-9][0-9]*", versions[0]):
+              raise SystemExit("::error::Define exactly one positive integer toolchainVersion in gradle/gradle-daemon-jvm.properties.")
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              output.write(f"version={versions[0]}\n")
+          PY
+
       - uses: actions/setup-java@v6
         with:
           distribution: temurin
-          java-version: 27
+          java-version: ${{ steps.jdk.outputs.version }}
+          check-latest: true
 
       - uses: android-actions/setup-android@v4
         with:

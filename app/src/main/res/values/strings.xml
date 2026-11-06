@@ -2,7 +2,7 @@
 <resources>
 
     <!-- 应用名 -->
-    <string name="app_name">DFRoot Shizuku版</string>
+    <string name="app_name">DFRoot Shizuku</string>
 
     <!-- 主界面 -->
     <string name="main_repository_attribution" translatable="false">\@kun520ovo GitHub/DFRoot</string>
@@ -27,10 +27,10 @@
     <string name="log_init_logging_disabled">init 的 INFO 日志未启用，已停止本次运行。请将开发者选项中的“日志缓冲区大小”设为非“关闭”，或检查 init 日志设置后重试。\n</string>
 
     <!-- 结果提示（Toast） -->
-    <string name="result_success">DFRoot Shizuku版：成功</string>
-    <string name="result_failed_ksud">DFRoot Shizuku版：错误 - ksud 退出码非零</string>
-    <string name="result_failed_logs">DFRoot Shizuku版：错误 - 请检查 logcat 与 dmesg</string>
-    <string name="result_failed_patch">DFRoot Shizuku版：错误 - 文件修补失败</string>
+    <string name="result_success">DFRoot Shizuku：成功</string>
+    <string name="result_failed_ksud">DFRoot Shizuku：错误 - ksud 退出码非零</string>
+    <string name="result_failed_logs">DFRoot Shizuku：错误 - 请检查 logcat 与 dmesg</string>
+    <string name="result_failed_patch">DFRoot Shizuku：错误 - 文件修补失败</string>
     <string name="log_exception">\n异常：</string>
 
     <!-- 主界面：顶部常驻信息面板 -->
@@ -57,7 +57,7 @@
     <string name="settings_title">设置</string>
     <string name="menu_settings">设置</string>
     <string name="pref_boot_start_title">开机自启</string>
-    <string name="pref_boot_start_summary">设备启动时自动运行 DFRoot Shizuku版</string>
+    <string name="pref_boot_start_summary">设备启动时自动运行 DFRoot Shizuku</string>
     <string name="pref_soft_reboot_title">自动软重启</string>
     <string name="pref_soft_reboot_summary">对「手动启动」和「开机自启」均生效。</string>
     <string name="pref_disable_modules_title">禁用所有模块</string>
@@ -71,7 +71,7 @@
     <string name="manager_permission_required_button">请先允许读取应用列表</string>
     <string name="manager_permission_settings">打开权限设置</string>
     <string name="manager_permission_settings_hint">请点击下方按钮打开权限设置，允许读取应用列表后返回。</string>
-    <string name="manager_settings_unavailable">无法打开权限设置，请前往系统设置 → 应用 → DFRoot Shizuku版 → 权限进行设置。</string>
+    <string name="manager_settings_unavailable">无法打开权限设置，请前往系统设置 → 应用 → DFRoot Shizuku → 权限进行设置。</string>
     <string name="manager_loading">正在查找 SU 管理器…</string>
     <string name="manager_choose">请选择一个 SU 管理器。</string>
     <string name="manager_not_found">未找到可用的 SU 管理器。请确认已安装 SukiSU 等兼容管理器，并允许读取应用列表。</string>
@@ -98,9 +98,9 @@
     <string name="shizuku_checking">正在连接并检查 Shizuku…</string>
     <string name="shizuku_missing">尚未安装 Shizuku，点击前往下载</string>
     <string name="shizuku_stopped">Shizuku 未运行，点击打开</string>
-    <string name="shizuku_permission">尚未授权，点击允许 DFRoot Shizuku版使用 Shizuku</string>
-    <string name="shizuku_permission_title">允许 DFRoot Shizuku版使用 Shizuku？</string>
-    <string name="shizuku_permission_rationale">仅在你手动启动 Root 时，DFRoot Shizuku版会临时读取并调整 log.tag.init；提权结束后恢复并校验原值。恢复失败时会保留记录并阻止再次启动。</string>
+    <string name="shizuku_permission">尚未授权，点击允许 DFRoot Shizuku使用 Shizuku</string>
+    <string name="shizuku_permission_title">允许 DFRoot Shizuku使用 Shizuku？</string>
+    <string name="shizuku_permission_rationale">仅在你手动启动 Root 时，DFRoot Shizuku会临时读取并调整 log.tag.init；提权结束后恢复并校验原值。恢复失败时会保留记录并阻止再次启动。</string>
     <string name="shizuku_permission_allow">继续并请求授权</string>
     <string name="shizuku_open_manager">打开 Shizuku</string>
     <string name="shizuku_requesting">请在 Shizuku 授权窗口中选择允许</string>
