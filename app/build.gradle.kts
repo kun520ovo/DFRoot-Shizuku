@@ -35,7 +35,7 @@ android {
                 storePassword = signingProps.getProperty("KEYSTORE_PASSWORD")
                 keyAlias = signingProps.getProperty("KEY_ALIAS")
                 keyPassword = signingProps.getProperty("KEY_PASSWORD")
-                enableV1Signing = true
+                enableV1Signing = false
                 enableV2Signing = true
                 enableV3Signing = true
                 enableV4Signing = false

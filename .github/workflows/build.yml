@@ -211,9 +211,8 @@ jobs:
           tools="$ANDROID_HOME/build-tools/37.0.0"
           for apk in app/build/outputs/apk/release/"DFRoot Shizuku-"*_CN.apk; do
             "$tools/aapt2" dump badging "$apk" | tee "$RUNNER_TEMP/apk-badging.txt"
-            # This verifies legacy signature layers; the APK minSdk remains 32.
-            "$tools/apksigner" verify --verbose --min-sdk-version 23 "$apk" | tee "$RUNNER_TEMP/signatures.txt"
-            for scheme in v1 v2 v3; do
+            "$tools/apksigner" verify --verbose --min-sdk-version 32 "$apk" | tee "$RUNNER_TEMP/signatures.txt"
+            for scheme in v2 v3; do
               grep -q "Verified using $scheme scheme .*: true" "$RUNNER_TEMP/signatures.txt"
             done
             "$tools/zipalign" -c -P 16 4 "$apk"

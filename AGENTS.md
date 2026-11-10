@@ -163,7 +163,7 @@
 - 保留 AIDL、BuildConfig、Release 代码裁剪与资源压缩，以及 Shizuku 服务和设置 Fragment 的反射入口保留规则。
 - 保留 `jniLibs.useLegacyPackaging = true` 和原生程序的 16 KB ELF 加载段对齐配置。
 - APK 文件名使用 `DFRoot Shizuku-<版本>_CN.apk`，版本从 `versionName` 去掉末尾的 `-cn` 得到，例如 `5.3-cn` 生成 `DFRoot Shizuku-5.3_CN.apk`。Gradle、Makefile 和 CI 的查找、复制、上传规则保持一致，并正确处理文件名中的空格。
-- Release 沿用现有私钥，启用 v1 / v2 / v3。Gradle 从未跟踪的 `signing.properties` 读取配置，不硬编码口令或个人路径。
+- Release 沿用现有私钥，启用 v2 / v3。Gradle 从未跟踪的 `signing.properties` 读取配置，不硬编码口令或个人路径。
 - CI 使用 `KEYSTORE`、`KEYSTORE_PASSWORD`、`KEY_ALIAS`、`KEY_PASSWORD` 四项 Secrets，临时生成根目录的配置和 `keystore.jks`，结束后清理。普通本机签名文件不因此删除或重置。
 - 手动运行默认只构建；勾选 `publish_release` 后才发布到 Releases。`release_tag` 留空时使用 `v<versionName>`，`v*` 标签推送仍自动发布。发布相关的应用构建共用并发组，不中断已运行的发布；发布前再次核对远端标签，指向其他提交时拒绝发布，不自动移动标签。
 - CI 将 Release APK 的包名、版本和 SDK 与 Gradle 配置逐项核对，确认原生 ABI 仅为 `arm64-v8a` 且 APK 不可调试。构建失败时仍上传已生成的 Lint 报告；内核任务、应用任务的超时分别为 30、60 分钟。
